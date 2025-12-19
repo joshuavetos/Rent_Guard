@@ -19,6 +19,7 @@ def emit(payload):
         json.dump(payload, f, indent=2)
 
     print(f"📜 Artifact written: {path}")
+    return payload
 
 def emit_override(original_artifact_id, actor, reason):
     payload = {

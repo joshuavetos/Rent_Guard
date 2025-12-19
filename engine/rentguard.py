@@ -15,7 +15,7 @@ def evaluate(record):
 
     # RG-MASS-ANOMALY
     if record["portfolio_late_rate"] > ACTIVE["N_PORTFOLIO_RATE"]:
-        emit({
+        return emit({
             "status": "REFUSED",
             "engine": "rentguard",
             "tenant_id": record["tenant_id"],
@@ -34,7 +34,7 @@ def evaluate(record):
             # RG-REPEAT-Y
             if record["days_since_eligible_filing"] > ACTIVE["Z_MAX_DELAY"]:
                 # RG-DELAY-BLOCK
-                emit({
+                return emit({
                     "status": "REFUSED",
                     "engine": "rentguard",
                     "tenant_id": record["tenant_id"],
@@ -47,7 +47,7 @@ def evaluate(record):
                 })
                 return
 
-        emit({
+        return emit({
             "status": "APPROVED",
             "engine": "rentguard",
             "tenant_id": record["tenant_id"],
@@ -60,7 +60,7 @@ def evaluate(record):
         })
         return
 
-    emit({
+    return emit({
         "status": "APPROVED",
         "engine": "rentguard",
         "tenant_id": record["tenant_id"],

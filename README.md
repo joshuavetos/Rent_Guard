@@ -45,3 +45,13 @@ The system successfully produced deterministic enforcement artifacts
 without runtime errors or external dependencies.
 
 See `validation/codex_execution_report.md` for execution details.
+
+## Web & API
+
+The repository includes a FastAPI service and a Next.js 14 web dashboard.
+
+- **Local Development**
+  - API: `uvicorn api.index:app --reload`
+  - Web: `cd web && npm install && npm run dev`
+- **Production / Vercel**
+  - Push the repository to Vercel. The included `vercel.json` routes `/api/*` to the FastAPI entrypoint and deploys the Next.js app from `web/`.
