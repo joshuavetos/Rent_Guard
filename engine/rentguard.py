@@ -5,7 +5,7 @@ from engine.residue import emit
 def days_between(a, b):
     return (b - a).days
 
-def evaluate(record):
+def evaluate(record, persist: bool = False):
     today = date.today()
 
     days_late = days_between(
@@ -25,8 +25,7 @@ def evaluate(record):
             "context": record,
             "human_override": False,
             "explanation": "Abnormally high portfolio lateness suggests systemic or data error."
-        })
-        return
+        }, persist=persist)
 
     # RG-LATE-X
     if days_late > ACTIVE["X_DAYS_LATE"]:
@@ -44,8 +43,7 @@ def evaluate(record):
                     "context": record,
                     "human_override": False,
                     "explanation": "Filing delayed beyond allowable window."
-                })
-                return
+                }, persist=persist)
 
         return emit({
             "status": "APPROVED",
@@ -57,8 +55,7 @@ def evaluate(record):
             "context": record,
             "human_override": False,
             "explanation": "Tenant late beyond threshold."
-        })
-        return
+        }, persist=persist)
 
     return emit({
         "status": "APPROVED",
@@ -70,4 +67,4 @@ def evaluate(record):
         "context": record,
         "human_override": False,
         "explanation": "Tenant within acceptable bounds."
-    })
+    }, persist=persist)

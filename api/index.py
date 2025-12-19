@@ -4,13 +4,13 @@ import json
 import zipfile
 from typing import List, Optional
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from engine.rentguard import evaluate
 
-app = FastAPI(title="RentGuard API", version="1.0.0")
+app = FastAPI(title="RentGuard API", version="1.1.0")
 
 
 class EvaluationRecord(BaseModel):
@@ -26,9 +26,18 @@ class JudgePacketRequest(BaseModel):
     artifacts: List[dict] = Field(..., description="List of artifact payloads to package")
 
 
+@app.get("/api/health")
+async def health():
+    return {
+        "status": "ok",
+        "engine": "RentGuard",
+        "version": "1.1.0"
+    }
+
+
 @app.post("/api/evaluate/json")
-async def evaluate_json(record: EvaluationRecord):
-    payload = evaluate(record.dict())
+async def evaluate_json(record: EvaluationRecord, persist: bool = Query(False)):
+    payload = evaluate(record.dict(), persist=persist)
     if not payload:
         raise HTTPException(status_code=400, detail="Evaluation did not produce an artifact")
     return JSONResponse(content=payload)
