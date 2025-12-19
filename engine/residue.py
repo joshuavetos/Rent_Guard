@@ -4,21 +4,23 @@ from engine.rules import ACTIVE
 
 ARTIFACT_DIR = Path("artifacts")
 
-def emit(payload):
-    ARTIFACT_DIR.mkdir(exist_ok=True)
+def emit(payload, persist: bool = False):
     payload["artifact_id"] = str(uuid.uuid4())
     payload["timestamp"] = datetime.datetime.utcnow().isoformat() + "Z"
-    
+
     # Transparency Rule: Always record the thresholds used
     payload["thresholds"] = ACTIVE
 
-    fname = f"{payload['status']}_{payload['tenant_id']}_{payload['artifact_id']}.json"
-    path = ARTIFACT_DIR / fname
+    if persist:
+        ARTIFACT_DIR.mkdir(exist_ok=True)
+        fname = f"{payload['status']}_{payload['tenant_id']}_{payload['artifact_id']}.json"
+        path = ARTIFACT_DIR / fname
 
-    with open(path, "w") as f:
-        json.dump(payload, f, indent=2)
+        with open(path, "w") as f:
+            json.dump(payload, f, indent=2)
 
-    print(f"📜 Artifact written: {path}")
+        print(f"📜 Artifact written: {path}")
+
     return payload
 
 def emit_override(original_artifact_id, actor, reason):
@@ -31,4 +33,4 @@ def emit_override(original_artifact_id, actor, reason):
         "human_override": True,
         "reason": reason
     }
-    emit(payload)
+    emit(payload, persist=True)
