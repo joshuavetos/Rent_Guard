@@ -37,3 +37,11 @@ RentGuard outputs are designed to be zipped into a "Judge Packet" containing:
 3. **Refusal Artifact:** The machine-generated block proving policy was followed.
 4. **Force Override (Optional):** The liability transfer record.
 5. **Timeline:** A clear sequence of events.
+
+## Validation Status
+
+RentGuard v1.0 has been independently executed against example inputs.
+The system successfully produced deterministic enforcement artifacts
+without runtime errors or external dependencies.
+
+See `validation/codex_execution_report.md` for execution details.
