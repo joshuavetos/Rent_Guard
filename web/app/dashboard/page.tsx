@@ -187,7 +187,7 @@ export default function AppPage() {
                 onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
               />
               <p className="font-semibold">Drag and drop or choose a CSV</p>
-              <p className="text-sm text-slate-500">Headers: tenant_id, due_date, late_count_window, days_since_eligible_filing, is_late</p>
+              <p className="text-sm text-slate-500">Headers: tenant_id, due_date, late_count_window, days_since_eligible_filing</p>
               {csvFile && <p className="mt-2 text-sm text-slate-700">Selected: {csvFile.name}</p>}
             </label>
             <button

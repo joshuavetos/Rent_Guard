@@ -46,15 +46,20 @@ async def evaluate_csv(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Unable to decode CSV as UTF-8")
 
     reader = csv.DictReader(io.StringIO(text))
+    required_headers = {"tenant_id", "due_date", "late_count_window", "days_since_eligible_filing"}
+    if not reader.fieldnames or set(reader.fieldnames) != required_headers:
+        raise HTTPException(
+            status_code=400,
+            detail="CSV must include only headers: tenant_id, due_date, late_count_window, days_since_eligible_filing"
+        )
+
     rows = list(reader)
     if not rows:
         raise HTTPException(status_code=400, detail="CSV contained no rows")
 
-    total = len(rows)
-    late_count = sum(1 for r in rows if r.get("is_late", "").lower() == "true")
-    portfolio_late_rate = late_count / total if total else 0
+    parsed_records = []
+    late_flags = []
 
-    results = []
     for row in rows:
         try:
             record = {
@@ -62,14 +67,22 @@ async def evaluate_csv(file: UploadFile = File(...)):
                 "due_date": row["due_date"],
                 "late_count_window": int(row["late_count_window"]),
                 "days_since_eligible_filing": int(row["days_since_eligible_filing"]),
-                "portfolio_late_rate": portfolio_late_rate,
             }
         except (KeyError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=f"Invalid CSV row: {exc}")
 
-        payload = evaluate(record)
+        parsed_records.append(record)
+        late_flags.append(record["late_count_window"] > 0)
+
+    total = len(rows)
+    portfolio_late_rate = sum(1 for flag in late_flags if flag) / total if total else 0
+
+    results = []
+    for record in parsed_records:
+        record_with_rate = {**record, "portfolio_late_rate": portfolio_late_rate}
+        payload = evaluate(record_with_rate)
         if not payload:
-            raise HTTPException(status_code=400, detail=f"Evaluation failed for tenant {record['tenant_id']}")
+            raise HTTPException(status_code=400, detail=f"Evaluation failed for tenant {record_with_rate['tenant_id']}")
         results.append(payload)
 
     return {"count": len(results), "portfolio_late_rate": portfolio_late_rate, "results": results}

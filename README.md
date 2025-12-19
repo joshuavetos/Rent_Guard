@@ -1,6 +1,7 @@
 # RentGuard
 
 RentGuard is an automated enforcement system used to apply consistent, predefined rent enforcement rules across a rental portfolio. It does not generate legal decisions; it enforces timing and process consistency to generate court-defensible artifacts.
+API flows and Judge Packets operate fully in-memory. Disk persistence is optional and explicitly enabled only for batch or CLI workflows that request it.
 
 ## Usage
 

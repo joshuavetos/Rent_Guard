@@ -41,7 +41,7 @@ export default function LandingPage() {
             </p>
             <div className="flex flex-wrap gap-4">
               <Link
-                href="/app"
+                href="/dashboard"
                 className="inline-flex items-center gap-2 bg-white text-slate-900 font-semibold px-5 py-3 rounded-full shadow-lg hover:translate-y-[-1px] transition"
               >
                 Run Demo <ArrowRight size={18} />
@@ -164,7 +164,7 @@ export default function LandingPage() {
             </div>
           </div>
           <Link
-            href="/app"
+            href="/dashboard"
             className="inline-flex items-center gap-2 text-slate-900 font-semibold"
           >
             Run Demo <ArrowRight size={18} />
