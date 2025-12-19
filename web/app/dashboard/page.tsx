@@ -14,6 +14,7 @@ type Artifact = {
   decision: string;
   explanation: string;
   timestamp: string;
+  thresholds?: Record<string, unknown>;
   [key: string]: any;
 };
 
@@ -23,7 +24,9 @@ export default function AppPage() {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [loading, setLoading] = useState(false);
   const [packetLoading, setPacketLoading] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedArtifacts, setExpandedArtifacts] = useState<Record<string, boolean>>({});
 
   const parsedJson = useMemo(() => {
     try {
@@ -123,6 +126,56 @@ export default function AppPage() {
     }
   }, [artifacts]);
 
+  const runSampleCase = useCallback(async () => {
+    if (demoLoading) return;
+    setDemoLoading(true);
+    setError(null);
+    try {
+      const demoPayload = {
+        tenant_id: "RG-DEMO-001",
+        due_date: "2024-05-01",
+        late_count_window: 2,
+        days_since_eligible_filing: 30,
+        portfolio_late_rate: 0.2
+      };
+
+      const res = await fetch(`${API_BASE}/evaluate/json`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(demoPayload)
+      });
+
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.detail || "Sample evaluation failed");
+      }
+
+      const payload = await res.json();
+      setArtifacts((current) => [payload, ...current]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setDemoLoading(false);
+    }
+  }, [demoLoading]);
+
+  const downloadArtifact = useCallback((artifact: Artifact) => {
+    const blob = new Blob([JSON.stringify(artifact, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `artifact_${artifact.rule_id || artifact.artifact_id}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const toggleDetails = useCallback((artifactId: string) => {
+    setExpandedArtifacts((prev) => ({
+      ...prev,
+      [artifactId]: !prev[artifactId]
+    }));
+  }, []);
+
   return (
     <main className="space-y-8">
       <section className="bg-white rounded-3xl p-8 border border-slate-100 card">
@@ -133,6 +186,14 @@ export default function AppPage() {
             <p className="text-slate-600 mt-1">Upload CSV or paste JSON to stream artifacts directly from the engine.</p>
           </div>
           <div className="flex gap-3">
+            <button
+              onClick={runSampleCase}
+              className="inline-flex items-center gap-2 px-4 py-3 bg-blue-50 text-blue-700 rounded-xl font-semibold border border-blue-100 disabled:opacity-50"
+              disabled={demoLoading}
+            >
+              {demoLoading ? <Loader2 className="animate-spin" size={18} /> : <Zap size={18} />}
+              Run Sample Case
+            </button>
             <button
               onClick={downloadPacket}
               className="inline-flex items-center gap-2 px-4 py-3 bg-slate-900 text-white rounded-xl font-semibold disabled:opacity-50"
@@ -212,22 +273,79 @@ export default function AppPage() {
           </div>
         ) : (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {artifacts.map((artifact) => (
-              <article key={artifact.artifact_id} className="bg-white border border-slate-100 rounded-2xl p-5 card space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold text-slate-500">{artifact.rule_name}</div>
-                  <span className="badge badge-soft">{artifact.status}</span>
-                </div>
-                <div className="text-lg font-semibold">Tenant {artifact.tenant_id}</div>
-                <p className="text-sm text-slate-600">{artifact.explanation}</p>
-                <div className="text-xs text-slate-500 space-y-1">
-                  <p>Decision: {artifact.decision}</p>
-                  <p>Rule ID: {artifact.rule_id}</p>
-                  <p>Recorded: {new Date(artifact.timestamp).toLocaleString()}</p>
-                  <p>Artifact ID: {artifact.artifact_id}</p>
-                </div>
-              </article>
-            ))}
+            {artifacts.map((artifact) => {
+              const detailId = `artifact-details-${artifact.artifact_id}`;
+              const thresholds =
+                artifact.thresholds && typeof artifact.thresholds === "object"
+                  ? Object.entries(artifact.thresholds)
+                  : [];
+
+              return (
+                <article key={artifact.artifact_id} className="bg-white border border-slate-100 rounded-2xl p-5 card space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm font-semibold text-slate-500">{artifact.rule_name || "—"}</div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => toggleDetails(artifact.artifact_id)}
+                        aria-expanded={!!expandedArtifacts[artifact.artifact_id]}
+                        aria-controls={detailId}
+                        tabIndex={0}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-200 rounded-lg px-2 py-1"
+                        type="button"
+                      >
+                        {expandedArtifacts[artifact.artifact_id] ? "Hide details" : "View details"}
+                      </button>
+                      <button
+                        onClick={() => downloadArtifact(artifact)}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-2 py-1"
+                        type="button"
+                      >
+                        <Download size={14} />
+                        Download JSON
+                      </button>
+                      <span className="badge badge-soft">{artifact.status}</span>
+                    </div>
+                  </div>
+                  <div className="text-lg font-semibold">Tenant {artifact.tenant_id}</div>
+                  <p className="text-sm text-slate-600">{artifact.explanation || "—"}</p>
+                  {expandedArtifacts[artifact.artifact_id] && (
+                    <div id={detailId} className="border-t border-slate-100 pt-3 space-y-2 text-sm text-slate-700">
+                      <div className="flex justify-between">
+                        <span className="font-semibold">Rule name</span>
+                        <span>{artifact.rule_name || "—"}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="font-semibold">Decision</span>
+                        <span>{artifact.decision || "—"}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold block">Explanation</span>
+                        <p className="text-slate-600">{artifact.explanation || "—"}</p>
+                      </div>
+                      <div>
+                        <span className="font-semibold block">Thresholds</span>
+                        {thresholds.length ? (
+                          <ul className="mt-1 space-y-1 text-slate-600">
+                            {thresholds.map(([key, value]) => (
+                              <li key={key} className="flex justify-between gap-2">
+                                <span className="font-semibold text-slate-700">{key}</span>
+                                <span>{String(value)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-slate-600">—</p>
+                        )}
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="font-semibold">Timestamp</span>
+                        <span>{artifact.timestamp ? new Date(artifact.timestamp).toLocaleString() : "—"}</span>
+                      </div>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
           </div>
         )}
       </section>

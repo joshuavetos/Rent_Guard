@@ -36,6 +36,9 @@ export default function LandingPage() {
               Automated Rent Enforcement Consistency.
             </h1>
             <p className="text-lg text-slate-200 max-w-2xl">
+              RentGuard enforces procedural consistency and records liability events but does not issue legal or judicial decisions.
+            </p>
+            <p className="text-lg text-slate-200 max-w-2xl">
               RentGuard applies defined rules the same way every time, emits immutable artifacts, and produces
               judge-ready packets without touching the file system.
             </p>
