@@ -1,0 +1,4 @@
+tenant_id,due_date,is_late,late_count_window,days_since_eligible_filing
+T-001,2024-10-01,true,2,95
+T-002,2024-11-01,false,0,0
+T-003,2024-09-01,true,3,112
