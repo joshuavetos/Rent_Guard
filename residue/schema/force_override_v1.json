@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Force Override Receipt v1",
+  "type": "object",
+  "properties": {
+    "input_hash": {
+      "type": "string",
+      "description": "SHA-256 hash of the canonicalized input payload that was refused"
+    },
+    "kernel_hash": {
+      "type": "string",
+      "description": "SHA-256 hash identifying the refusing kernel"
+    },
+    "output_hash": {
+      "type": "string",
+      "description": "SHA-256 hash of the override decision payload"
+    },
+    "signature": {
+      "type": "string",
+      "description": "Detached signature by the override actor"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp when the override was recorded"
+    },
+    "anchor_hash": {
+      "type": "string",
+      "description": "Optional external anchoring hash for witness federation"
+    }
+  },
+  "required": [
+    "input_hash",
+    "kernel_hash",
+    "output_hash",
+    "signature",
+    "timestamp"
+  ],
+  "additionalProperties": false
+}

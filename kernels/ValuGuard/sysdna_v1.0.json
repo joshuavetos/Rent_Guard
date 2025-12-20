@@ -1,0 +1,12 @@
+{
+  "id": "ValuGuard",
+  "version": "1.0.0",
+  "status": "DORMANT",
+  "jurisdiction": "Asset Valuation",
+  "rules": [
+    {
+      "if": "volatility > threshold AND liquidity == 0",
+      "then": "flag = ILLUSORY_LIQUIDITY"
+    }
+  ]
+}

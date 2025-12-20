@@ -3,6 +3,13 @@
 RentGuard is an automated enforcement system used to apply consistent, predefined rent enforcement rules across a rental portfolio. It does not generate legal decisions; it enforces timing and process consistency to generate court-defensible artifacts.
 API flows and Judge Packets operate fully in-memory. Disk persistence is optional and explicitly enabled only for batch or CLI workflows that request it.
 
+## Genesis Governance Warnings
+
+- Genesis artifacts in `/protocol` and `/sysdna/core` are immutable. Any modification requires a fork, not a direct edit.
+- History is append-only; residue schemas are versioned by addition only.
+- Violations of immutability or append-only rules invalidate trust in generated artifacts.
+- Optional protection: set `git config core.hooksPath .githooks` to enable the provided pre-commit guard that blocks staged edits under `/protocol` and `/sysdna/core`.
+
 ## Usage
 
 **Single Record (JSON):**
