@@ -3,6 +3,7 @@ from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from typing import Any, Dict
 
 from engine.residue import emit
+from engine.rules import ACTIVE
 
 SYSDNA_HASH = "a7f9c2b8"
 DEFINITIONS = {
@@ -86,10 +87,12 @@ def evaluate(ledger: Dict[str, Any], persist: bool = False):
         })
         return emit(artifact, persist=persist)
 
-    grace_period_days = DEFINITIONS["grace_period_days"]
+    grace_period_days = ACTIVE.get("X_DAYS_LATE", DEFINITIONS["grace_period_days"])
+    artifact["definitions"] = {**DEFINITIONS, "grace_period_days": grace_period_days}
     min_actionable_balance = Decimal(str(DEFINITIONS["min_actionable_balance"]))
+    days_past_due = (current_date - due_date).days
     late_condition = (
-        current_date > due_date + timedelta(days=grace_period_days)
+        days_past_due > grace_period_days
         and balance_value > min_actionable_balance
     )
 
@@ -98,14 +101,14 @@ def evaluate(ledger: Dict[str, Any], persist: bool = False):
             "status": "LATE",
             "decision": "ESCALATE",
             "action": "NONE",
-            "days_past_due": (current_date - due_date).days,
+            "days_past_due": days_past_due,
         })
     else:
         artifact.update({
             "status": "CLEAR",
             "decision": "NO_ACTION",
             "action": "NONE",
-            "days_past_due": (current_date - due_date).days,
+            "days_past_due": days_past_due,
         })
 
     if artifact["status"] == "LATE" and artifact["no_notice_sent"]:
