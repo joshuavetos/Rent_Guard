@@ -122,7 +122,7 @@ export default function RentGuardShadowRun() {
     async (file: File) => {
       const content = await file.text();
       try {
-        if (file.name.toLowerCase().endswith(".csv")) {
+        if (file.name.toLowerCase().endsWith(".csv")) {
           const ledger = parseCsv(content);
           setLedgerText(JSON.stringify(ledger, null, 2));
           await evaluateLedger(ledger);
