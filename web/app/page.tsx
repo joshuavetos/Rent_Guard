@@ -1,213 +1,343 @@
-import Link from "next/link";
-import { ArrowRight, CheckCircle2, FileText, ShieldCheck, Zap } from "lucide-react";
+"use client";
 
-const steps = [
-  {
-    title: "Ingest",
-    description: "Upload CSV or send JSON. RentGuard normalizes dates, history, and portfolio context instantly.",
-    icon: Zap
-  },
-  {
-    title: "Evaluate",
-    description: "Rules fire deterministically with no hidden knobs. Every refusal or approval is documented.",
-    icon: ShieldCheck
-  },
-  {
-    title: "Emit",
-    description: "Artifacts are generated in-memory and streamed directly to the API and dashboard.",
-    icon: FileText
-  }
-];
+import { useCallback, useMemo, useState } from "react";
+import { AlertTriangle, FileJson, UploadCloud } from "lucide-react";
 
-const pricing = [
-  { name: "Pilot", price: "$499/mo", features: ["Up to 5,000 tenants", "Email support", "In-memory artifacts"] },
-  { name: "Growth", price: "$1,499/mo", features: ["Up to 50,000 tenants", "Priority support", "Compliance exports"] },
-  { name: "Enterprise", price: "Talk to us", features: ["Custom SLAs", "SOC2 alignment", "Dedicated onboarding"] }
-];
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api";
 
-export default function LandingPage() {
+type Artifact = {
+  artifact_id: string;
+  tenant_id: string;
+  status: string;
+  decision: string;
+  action: string;
+  explanation?: string;
+  balance?: string;
+  notice_date?: string;
+  days_past_due?: number;
+  timestamp?: string;
+  [key: string]: unknown;
+};
+
+type Ledger = {
+  tenant_id: string;
+  due_date: string;
+  balance: number | string;
+  no_notice_sent?: boolean;
+  current_date?: string;
+  human_block?: boolean;
+  human_override?: boolean;
+  override_reason?: string;
+};
+
+const REQUIRED_HEADERS = ["tenant_id", "due_date", "balance"] as const;
+
+export default function RentGuardShadowRun() {
+  const [ledgerText, setLedgerText] = useState("");
+  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [packetLoading, setPacketLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const currentArtifact = artifacts[0];
+
+  const statusTone = useMemo(() => {
+    if (!currentArtifact) return { label: "UNSET", color: "text-slate-400 border-slate-300 bg-slate-50" };
+    if (currentArtifact.status === "LATE") return { label: "LATE", color: "text-red-700 border-red-300 bg-red-50" };
+    if (currentArtifact.status === "CLEAR") return { label: "CLEAR", color: "text-emerald-700 border-emerald-300 bg-emerald-50" };
+    return { label: currentArtifact.status, color: "text-slate-800 border-slate-300 bg-slate-50" };
+  }, [currentArtifact]);
+
+  const parseCsv = (text: string): Ledger => {
+    const [headerLine, ...rows] = text.trim().split(/\r?\n/);
+    const headers = headerLine.split(",").map((h) => h.trim());
+    const firstRow = rows[0];
+    if (!firstRow) throw new Error("CSV contained no rows.");
+    const values = firstRow.split(",").map((v) => v.trim());
+    const row: Record<string, string> = {};
+    headers.forEach((h, idx) => {
+      row[h] = values[idx];
+    });
+
+    REQUIRED_HEADERS.forEach((key) => {
+      if (!(key in row)) throw new Error(`Missing column: ${key}`);
+    });
+
+    return {
+      tenant_id: row["tenant_id"],
+      due_date: row["due_date"],
+      balance: row["balance"],
+      no_notice_sent: row["no_notice_sent"] ? row["no_notice_sent"].toLowerCase() !== "false" : true,
+    };
+  };
+
+  const parseJsonText = (text: string): Ledger => {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) {
+      if (!parsed.length) throw new Error("JSON array is empty.");
+      return parsed[0] as Ledger;
+    }
+    return parsed as Ledger;
+  };
+
+  const evaluateLedger = useCallback(
+    async (ledger: Ledger) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`${API_BASE}/evaluate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(ledger),
+        });
+        if (!res.ok) {
+          const detail = await res.json().catch(() => null);
+          throw new Error(`Compliance Error: ${detail?.detail || "Evaluation failed."}`);
+        }
+        const payload = await res.json();
+        setArtifacts((prev) => [payload, ...prev]);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Compliance Error: Unknown fault.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [setArtifacts]
+  );
+
+  const handleLedgerSubmit = useCallback(() => {
+    if (!ledgerText.trim()) {
+      setError("Compliance Error: Provide JSON ledger content.");
+      return;
+    }
+    try {
+      const ledger = parseJsonText(ledgerText);
+      evaluateLedger(ledger);
+    } catch (err) {
+      setError(err instanceof Error ? `Compliance Error: ${err.message}` : "Compliance Error: Invalid JSON.");
+    }
+  }, [ledgerText, evaluateLedger]);
+
+  const handleFile = useCallback(
+    async (file: File) => {
+      const content = await file.text();
+      try {
+        if (file.name.toLowerCase().endswith(".csv")) {
+          const ledger = parseCsv(content);
+          setLedgerText(JSON.stringify(ledger, null, 2));
+          await evaluateLedger(ledger);
+        } else {
+          const ledger = parseJsonText(content);
+          setLedgerText(JSON.stringify(ledger, null, 2));
+          await evaluateLedger(ledger);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? `Compliance Error: ${err.message}` : "Compliance Error: Parse failure.");
+      }
+    },
+    [evaluateLedger]
+  );
+
+  const onDrop = useCallback(
+    (event: React.DragEvent<HTMLLabelElement>) => {
+      event.preventDefault();
+      const file = event.dataTransfer.files?.[0];
+      if (file) handleFile(file);
+    },
+    [handleFile]
+  );
+
+  const downloadPacket = useCallback(async () => {
+    if (!artifacts.length) {
+      setError("Compliance Error: No artifacts available.");
+      return;
+    }
+    setPacketLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/judge-packet`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenant_id: artifacts[0]?.tenant_id, artifacts }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(`Compliance Error: ${detail?.detail || "Judge packet failed."}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${artifacts[0]?.tenant_id || "judge_packet"}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Compliance Error: Unknown fault.");
+    } finally {
+      setPacketLoading(false);
+    }
+  }, [artifacts]);
+
+  const runLateDemo = useCallback(() => {
+    const today = new Date();
+    const lateDate = new Date(today);
+    lateDate.setDate(today.getDate() - 4);
+    const demoLedger: Ledger = {
+      tenant_id: "SHADOW-DEMO",
+      due_date: lateDate.toISOString().slice(0, 10),
+      balance: 125.5,
+      no_notice_sent: true,
+    };
+    setLedgerText(JSON.stringify(demoLedger, null, 2));
+    evaluateLedger(demoLedger);
+  }, [evaluateLedger]);
+
   return (
-    <main className="space-y-16">
-      <section className="hero-gradient text-white rounded-3xl p-12 shadow-2xl">
-        <div className="grid md:grid-cols-2 gap-10 items-center">
-          <div className="space-y-6">
-            <p className="badge badge-soft w-fit">Automated Rent Enforcement Consistency</p>
-            <h1 className="text-4xl md:text-5xl font-semibold leading-tight">
-              Automated Rent Enforcement Consistency.
-            </h1>
-            <p className="text-lg text-slate-200 max-w-2xl">
-              RentGuard enforces procedural consistency and records liability events but does not issue legal or judicial decisions.
-            </p>
-            <p className="text-lg text-slate-200 max-w-2xl">
-              RentGuard applies defined rules the same way every time, emits immutable artifacts, and produces
-              judge-ready packets without touching the file system.
-            </p>
-            <div className="flex flex-wrap gap-4">
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center gap-2 bg-white text-slate-900 font-semibold px-5 py-3 rounded-full shadow-lg hover:translate-y-[-1px] transition"
-              >
-                Run Demo <ArrowRight size={18} />
-              </Link>
-              <a
-                href="#how-it-works"
-                className="inline-flex items-center gap-2 border border-slate-200 px-5 py-3 rounded-full text-white hover:bg-white/10"
-              >
-                See how it works
-              </a>
-            </div>
-            <div className="flex items-center gap-3 text-slate-200">
-              <ShieldCheck size={24} />
-              <span>Permanent audit trail • Override doctrine enforced • No silent state</span>
-            </div>
-          </div>
-          <div className="gradient-border p-1 rounded-[1.3rem]">
-            <div className="bg-white/95 text-slate-900 rounded-[1.2rem] p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold text-slate-500">Judge Packet Preview</div>
-                <div className="badge badge-soft">In-memory</div>
-              </div>
-              <div className="space-y-3 text-sm text-slate-600">
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="text-emerald-500" size={18} />
-                  <div>
-                    <p className="font-semibold text-slate-800">System Overview</p>
-                    <p>Enforcement logic, thresholds, and overrides documented in a single bundle.</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="text-emerald-500" size={18} />
-                  <div>
-                    <p className="font-semibold text-slate-800">Tenant History</p>
-                    <p>Objective payment history with portfolio context.</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="text-emerald-500" size={18} />
-                  <div>
-                    <p className="font-semibold text-slate-800">Force Override</p>
-                    <p>Recorded with actor, reason, and timestamp when humans override policy.</p>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-slate-100 rounded-xl p-4">
-                <p className="text-xs uppercase text-slate-500 mb-2">Live data flow</p>
-                <div className="flex items-center justify-between text-sm font-semibold">
-                  <span>Input ➜ Evaluate ➜ Emit ➜ Packet</span>
-                  <span className="text-emerald-600">Serverless safe</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="how-it-works" className="space-y-6">
+    <main className="space-y-8">
+      <header className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <p className="badge badge-soft">How It Works</p>
-          <h2 className="text-3xl font-semibold mt-2">Deterministic, explainable, and court-ready.</h2>
-          <p className="text-slate-600 max-w-3xl mt-2">
-            RentGuard consumes portfolio context, applies rules without deviation, and emits artifacts that can be
-            streamed directly to your API clients and Judge Packets—all without saving to disk.
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">RentGuard Shadow Run</p>
+          <h1 className="text-3xl font-semibold mt-1">Governance Compliance Execution</h1>
+          <p className="text-sm text-slate-600 mt-1 max-w-2xl">
+            Drag a ledger (JSON or CSV). The system evaluates deterministically. No friendliness. Output mirrors policy.
           </p>
         </div>
-        <div className="grid md:grid-cols-3 gap-6">
-          {steps.map(({ title, description, icon: Icon }) => (
-            <div key={title} className="card bg-white rounded-2xl p-6 space-y-3 border border-slate-100">
-              <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-slate-900 text-white">
-                <Icon size={22} />
-              </div>
-              <h3 className="text-xl font-semibold">{title}</h3>
-              <p className="text-slate-600 text-sm">{description}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+        <button
+          onClick={runLateDemo}
+          className="px-4 py-2 bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-800"
+        >
+          Run 4-Day Late Demo
+        </button>
+      </header>
 
-      <section className="grid md:grid-cols-2 gap-8 items-center">
+      {error && (
+        <div className="border border-amber-400 bg-amber-50 text-amber-800 p-4 rounded-xl flex items-start gap-3">
+          <AlertTriangle className="mt-0.5" size={18} />
+          <div className="space-y-1">
+            <div className="font-semibold text-sm">Compliance Error</div>
+            <div className="text-sm">{error}</div>
+          </div>
+        </div>
+      )}
+
+      <section className="grid lg:grid-cols-[2fr,1fr] gap-6 items-start">
         <div className="space-y-4">
-          <p className="badge badge-soft">Force Override Doctrine</p>
-          <h2 className="text-3xl font-semibold">Humans can override. The record is permanent.</h2>
-          <p className="text-slate-600">
-            When a human chooses to override RentGuard, the system does not erase the refusal. It creates a Force
-            Override artifact documenting actor, reason, and the original refusal. That liability transfer ships in
-            every Judge Packet.
-          </p>
-          <ul className="space-y-2 text-slate-700">
-            <li className="flex items-center gap-2"><CheckCircle2 className="text-emerald-500" size={18} />
-              Immutable override log
-            </li>
-            <li className="flex items-center gap-2"><CheckCircle2 className="text-emerald-500" size={18} />
-              Deterministic thresholds
-            </li>
-            <li className="flex items-center gap-2"><CheckCircle2 className="text-emerald-500" size={18} />
-              Audit-ready exports
-            </li>
-          </ul>
-        </div>
-        <div className="card bg-white rounded-2xl p-6 border border-slate-100 space-y-4">
-          <h3 className="text-xl font-semibold">Judge Packet Delivery</h3>
-          <p className="text-slate-600 text-sm">Artifacts are zipped in-memory and streamed to the client—no file system access required.</p>
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-              <p className="font-semibold">System Overview</p>
-              <p className="text-slate-600">Policy, thresholds, overrides.</p>
-            </div>
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-              <p className="font-semibold">Tenant History</p>
-              <p className="text-slate-600">Dates, counts, delay windows.</p>
-            </div>
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-              <p className="font-semibold">Refusal Artifacts</p>
-              <p className="text-slate-600">Proof of consistent enforcement.</p>
-            </div>
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-              <p className="font-semibold">Overrides</p>
-              <p className="text-slate-600">Actor, reason, timestamp.</p>
-            </div>
-          </div>
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center gap-2 text-slate-900 font-semibold"
-          >
-            Run Demo <ArrowRight size={18} />
-          </Link>
-        </div>
-      </section>
-
-      <section className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="badge badge-soft">Pricing</p>
-            <h2 className="text-3xl font-semibold mt-2">Straightforward plans.</h2>
-          </div>
-          <p className="text-slate-600 max-w-xl">
-            Every plan includes deterministic rule execution, artifact generation in memory, and judge-ready packets
-            streamed on demand.
-          </p>
-        </div>
-        <div className="grid md:grid-cols-3 gap-6">
-          {pricing.map((plan) => (
-            <div key={plan.name} className="card bg-white rounded-2xl p-6 border border-slate-100 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-semibold">{plan.name}</h3>
-                <span className="badge badge-strong">{plan.price}</span>
+          <div className="border border-slate-200 rounded-xl p-4 bg-white">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-semibold text-slate-700">
+                <FileJson size={18} /> Ledger Input
               </div>
-              <ul className="space-y-2 text-slate-600">
-                {plan.features.map((feature) => (
-                  <li key={feature} className="flex items-center gap-2">
-                    <CheckCircle2 className="text-emerald-500" size={18} />
-                    {feature}
-                  </li>
-                ))}
-              </ul>
-              <button className="w-full py-3 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800">
-                Choose plan
+              <button
+                onClick={handleLedgerSubmit}
+                disabled={loading}
+                className="px-3 py-2 bg-slate-900 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+              >
+                {loading ? "Evaluating…" : "Evaluate"}
               </button>
             </div>
-          ))}
+            <textarea
+              value={ledgerText}
+              onChange={(e) => setLedgerText(e.target.value)}
+              className="mt-3 w-full h-56 p-3 rounded-lg border border-slate-200 bg-slate-50 font-mono text-sm focus:ring-2 focus:ring-slate-900 focus:bg-white"
+              placeholder='{"tenant_id": "T-01", "due_date": "2024-01-05", "balance": 1200.45, "no_notice_sent": true}'
+            />
+            <div className="text-xs text-slate-500 mt-2">Required: tenant_id, due_date, balance.</div>
+          </div>
+
+          <label
+            onDrop={onDrop}
+            onDragOver={(e) => e.preventDefault()}
+            className="border border-dashed border-slate-400 rounded-xl p-5 bg-slate-50 flex items-center justify-between cursor-pointer hover:border-slate-600"
+            htmlFor="ledger-upload"
+          >
+            <div className="flex items-center gap-3">
+              <UploadCloud size={22} className="text-slate-700" />
+              <div>
+                <div className="font-semibold text-slate-800">Drop JSON or CSV</div>
+                <div className="text-sm text-slate-600">First row used for CSV. No tolerance for malformed inputs.</div>
+              </div>
+            </div>
+            <input
+              id="ledger-upload"
+              type="file"
+              accept=".json,.csv,application/json,text/csv"
+              className="sr-only"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleFile(file);
+              }}
+            />
+            <span className="text-xs uppercase tracking-[0.2em] text-slate-500">Drag or Click</span>
+          </label>
+        </div>
+
+        <div className="border border-slate-200 rounded-xl p-5 bg-white space-y-3">
+          <div className="flex items-center justify-between">
+            <div className={`text-4xl font-semibold tracking-tight font-mono ${statusTone.color}`}>
+              {statusTone.label}
+            </div>
+            <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Status</div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-sm text-slate-700">
+            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+              <div className="text-xs uppercase text-slate-500 mb-1">Action</div>
+              <div className="font-semibold">{currentArtifact?.action || "NONE"}</div>
+            </div>
+            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+              <div className="text-xs uppercase text-slate-500 mb-1">Decision</div>
+              <div className="font-semibold">{currentArtifact?.decision || "—"}</div>
+            </div>
+            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+              <div className="text-xs uppercase text-slate-500 mb-1">Balance</div>
+              <div className="font-semibold font-mono">{currentArtifact?.balance || "0.00"}</div>
+            </div>
+            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+              <div className="text-xs uppercase text-slate-500 mb-1">Days Past Due</div>
+              <div className="font-semibold font-mono">{currentArtifact?.days_past_due ?? "—"}</div>
+            </div>
+            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+              <div className="text-xs uppercase text-slate-500 mb-1">Notice Date</div>
+              <div className="font-semibold font-mono">{currentArtifact?.notice_date || "—"}</div>
+            </div>
+            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+              <div className="text-xs uppercase text-slate-500 mb-1">Artifact ID</div>
+              <div className="font-semibold text-xs break-all">{currentArtifact?.artifact_id || "—"}</div>
+            </div>
+          </div>
+          <div className="p-3 rounded-lg bg-slate-900 text-white text-sm min-h-[96px]">
+            <div className="text-xs uppercase text-slate-300 mb-1">Explanation</div>
+            <div className="leading-relaxed">{currentArtifact?.explanation || "Awaiting evaluation."}</div>
+          </div>
+          <button
+            onClick={downloadPacket}
+            disabled={!artifacts.length || packetLoading}
+            className="w-full py-3 rounded-lg bg-slate-900 text-white font-semibold disabled:opacity-50"
+          >
+            {packetLoading ? "Building Judge Packet…" : "Get Judge Packet"}
+          </button>
         </div>
       </section>
+
+      {artifacts.length > 1 && (
+        <section className="border border-slate-200 rounded-xl p-4 bg-white">
+          <div className="text-sm font-semibold text-slate-700 mb-3">Recent Artifacts</div>
+          <div className="space-y-2 text-sm">
+            {artifacts.map((artifact) => (
+              <div
+                key={artifact.artifact_id}
+                className="grid grid-cols-[1fr,1fr,1fr,auto] gap-3 items-center border border-slate-100 rounded-lg p-3"
+              >
+                <div className="font-semibold">{artifact.tenant_id}</div>
+                <div className="font-mono text-xs">{artifact.status}</div>
+                <div className="text-slate-600">{artifact.action}</div>
+                <div className="text-xs text-slate-500">{artifact.timestamp ? new Date(artifact.timestamp).toLocaleString() : "—"}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </main>
   );
 }

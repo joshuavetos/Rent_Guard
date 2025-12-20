@@ -9,9 +9,8 @@ type Artifact = {
   artifact_id: string;
   tenant_id: string;
   status: string;
-  rule_id: string;
-  rule_name: string;
   decision: string;
+  action: string;
   explanation: string;
   timestamp: string;
   thresholds?: Record<string, unknown>;
@@ -44,7 +43,7 @@ export default function AppPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/evaluate/json`, {
+      const res = await fetch(`${API_BASE}/evaluate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(parsedJson)
@@ -70,19 +69,35 @@ export default function AppPage() {
     setLoading(true);
     setError(null);
     try {
-      const formData = new FormData();
-      formData.append("file", csvFile);
-
-      const res = await fetch(`${API_BASE}/evaluate/csv`, {
+      const text = await csvFile.text();
+      const [headerLine, ...rows] = text.trim().split(/\r?\n/);
+      if (!headerLine || !rows.length) throw new Error("CSV contained no rows");
+      const headers = headerLine.split(",").map((h) => h.trim());
+      const values = rows[0].split(",").map((v) => v.trim());
+      const row: Record<string, string> = {};
+      headers.forEach((h, idx) => {
+        row[h] = values[idx];
+      });
+      if (!row["tenant_id"] || !row["due_date"] || !row["balance"]) {
+        throw new Error("CSV must include tenant_id,due_date,balance");
+      }
+      const ledger = {
+        tenant_id: row["tenant_id"],
+        due_date: row["due_date"],
+        balance: Number(row["balance"]),
+        no_notice_sent: row["no_notice_sent"] ? row["no_notice_sent"].toLowerCase() !== "false" : true
+      };
+      const res = await fetch(`${API_BASE}/evaluate`, {
         method: "POST",
-        body: formData
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ledger)
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => null);
         throw new Error(detail?.detail || "CSV evaluation failed");
       }
-      const data = await res.json();
-      setArtifacts((current) => [...data.results, ...current]);
+      const payload = await res.json();
+      setArtifacts((current) => [payload, ...current]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -134,12 +149,11 @@ export default function AppPage() {
       const demoPayload = {
         tenant_id: "RG-DEMO-001",
         due_date: "2024-05-01",
-        late_count_window: 2,
-        days_since_eligible_filing: 30,
-        portfolio_late_rate: 0.2
+        balance: 120.75,
+        no_notice_sent: true
       };
 
-      const res = await fetch(`${API_BASE}/evaluate/json`, {
+      const res = await fetch(`${API_BASE}/evaluate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(demoPayload)
@@ -164,7 +178,7 @@ export default function AppPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `artifact_${artifact.rule_id || artifact.artifact_id}.json`;
+    link.download = `artifact_${artifact.action || artifact.artifact_id}.json`;
     link.click();
     URL.revokeObjectURL(url);
   }, []);
@@ -227,7 +241,7 @@ export default function AppPage() {
               value={jsonInput}
               onChange={(e) => setJsonInput(e.target.value)}
               className="w-full h-64 p-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500"
-              placeholder='{"tenant_id": "T-100", "due_date": "2024-05-01", "late_count_window": 2, "days_since_eligible_filing": 30, "portfolio_late_rate": 0.2}'
+              placeholder='{"tenant_id": "T-100", "due_date": "2024-05-01", "balance": 120.75, "no_notice_sent": true}'
             />
             <p className="text-sm text-slate-500">Supply the same fields used by the engine. Dates must be ISO formatted.</p>
           </div>
@@ -248,7 +262,7 @@ export default function AppPage() {
                 onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
               />
               <p className="font-semibold">Drag and drop or choose a CSV</p>
-              <p className="text-sm text-slate-500">Headers: tenant_id, due_date, late_count_window, days_since_eligible_filing</p>
+              <p className="text-sm text-slate-500">Headers: tenant_id, due_date, balance[, no_notice_sent]</p>
               {csvFile && <p className="mt-2 text-sm text-slate-700">Selected: {csvFile.name}</p>}
             </label>
             <button
@@ -283,7 +297,7 @@ export default function AppPage() {
               return (
                 <article key={artifact.artifact_id} className="bg-white border border-slate-100 rounded-2xl p-5 card space-y-3">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-semibold text-slate-500">{artifact.rule_name || "—"}</div>
+                    <div className="text-sm font-semibold text-slate-500">{artifact.action || "—"}</div>
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => toggleDetails(artifact.artifact_id)}
@@ -310,11 +324,7 @@ export default function AppPage() {
                   <p className="text-sm text-slate-600">{artifact.explanation || "—"}</p>
                   {expandedArtifacts[artifact.artifact_id] && (
                     <div id={detailId} className="border-t border-slate-100 pt-3 space-y-2 text-sm text-slate-700">
-                      <div className="flex justify-between">
-                        <span className="font-semibold">Rule name</span>
-                        <span>{artifact.rule_name || "—"}</span>
-                      </div>
-                      <div className="flex justify-between">
+                    <div className="flex justify-between">
                         <span className="font-semibold">Decision</span>
                         <span>{artifact.decision || "—"}</span>
                       </div>
