@@ -1,0 +1,12 @@
+SUFFICIENCY MAPPING
+ID: SysDNA-Map-v1.0
+Status: FROZEN
+
+F1 Ordering Violation → INV-1  
+F2 Partial Commit → INV-2  
+F3 Zombie Mutation → INV-3  
+F4 Premature Irreversibility → INV-4  
+F5 Resource Exhaustion → INV-5  
+F6 Race Condition → INV-6
+
+No structural failure exists outside invariant coverage.

@@ -1,0 +1,23 @@
+SYSDNA CORE INVARIANTS
+ID: SysDNA-Core-v1.0
+Status: FROZEN
+
+INV-1 Sequential Monotonicity  
+State transitions must follow a strictly ordered DAG.
+
+INV-2 Atomic Commit Boundaries  
+Cross-domain effects must use atomic commit or saga patterns.
+
+INV-3 Idempotency Keys  
+All mutation requests require deterministic idempotency keys.
+
+INV-4 Irreversibility Gating  
+Irreversible effects are forbidden prior to commit acknowledgment.
+
+INV-5 Bounded Fan-Out  
+Triggers must enforce explicit upper bounds on downstream execution.
+
+INV-6 Serialized State Access  
+Shared state mutation requires CAS or equivalent serialization.
+
+All invariants are necessary. Removal of any invariant reintroduces a structural failure.

@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Residue Receipt v1",
+  "type": "object",
+  "properties": {
+    "input_hash": {
+      "type": "string",
+      "description": "SHA-256 hash of the canonicalized input payload"
+    },
+    "kernel_hash": {
+      "type": "string",
+      "description": "SHA-256 hash identifying the kernel that executed the request"
+    },
+    "output_hash": {
+      "type": "string",
+      "description": "SHA-256 hash of the canonicalized output payload"
+    },
+    "signature": {
+      "type": "string",
+      "description": "Detached signature covering the receipt fields"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp of execution"
+    },
+    "anchor_hash": {
+      "type": "string",
+      "description": "Optional external anchoring hash for witness federation"
+    }
+  },
+  "required": [
+    "input_hash",
+    "kernel_hash",
+    "output_hash",
+    "signature",
+    "timestamp"
+  ],
+  "additionalProperties": false
+}

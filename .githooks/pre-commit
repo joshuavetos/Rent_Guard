@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+changed=$(git diff --cached --name-only || true)
+
+if echo "$changed" | grep -E '^(protocol/|sysdna/core/)' >/dev/null; then
+  echo "Pre-commit blocked: immutable artifacts under /protocol or /sysdna/core require a fork." >&2
+  exit 1
+fi
+
+exit 0

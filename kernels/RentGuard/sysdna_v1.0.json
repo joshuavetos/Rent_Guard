@@ -1,0 +1,16 @@
+{
+  "id": "RentGuard",
+  "version": "1.0.0",
+  "status": "ACTIVE",
+  "jurisdiction": "Housing Enforcement",
+  "rules": [
+    {
+      "if": "late_days > 3",
+      "then": "status = LATE"
+    },
+    {
+      "if": "status == LATE AND notice_sent == false",
+      "then": "action = EMIT_NOTICE"
+    }
+  ]
+}

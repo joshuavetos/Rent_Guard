@@ -1,0 +1,28 @@
+STRUCTURAL FAILURE DOMAIN DEFINITION
+ID: SFDD-v1.0
+Status: FROZEN
+
+A failure is structural if and only if it results solely from system interaction, independent of business semantics.
+
+F1: Ordering Violation  
+An effect executes before its prerequisite is committed.
+
+F2: Partial Commit  
+One system commits while another fails, leaving global state inconsistent.
+
+F3: Zombie Mutation  
+A retried request executes multiple times, duplicating side effects.
+
+F4: Premature Irreversibility  
+An irreversible action occurs before transaction finalization.
+
+F5: Resource Exhaustion via Fan-out  
+A single trigger causes unbounded downstream execution.
+
+F6: Race Condition  
+Concurrent actors mutate shared state without serialization.
+
+Explicitly out of scope:
+- Logic errors
+- Authorization errors
+- Performance or availability collapse
