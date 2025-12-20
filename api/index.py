@@ -1,100 +1,44 @@
-import csv
 import io
 import json
 import zipfile
-from typing import List, Optional
+from typing import Optional
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from engine.rentguard import evaluate
 
-app = FastAPI(title="RentGuard API", version="1.1.0")
+app = FastAPI(title="RentGuard API", version="2.0.0")
 
 
-class EvaluationRecord(BaseModel):
-    tenant_id: str = Field(..., description="Unique tenant identifier")
+class Ledger(BaseModel):
+    tenant_id: str = Field(..., description="Tenant identifier")
     due_date: str = Field(..., description="ISO formatted due date (YYYY-MM-DD)")
-    late_count_window: int = Field(..., ge=0, description="Late count within the monitoring window")
-    days_since_eligible_filing: int = Field(..., ge=0, description="Days since filing became eligible")
-    portfolio_late_rate: float = Field(..., ge=0, description="Portfolio-wide late rate as a decimal")
+    balance: float = Field(..., description="Outstanding balance")
+    no_notice_sent: Optional[bool] = Field(True, description="Whether no notice has been sent")
+    current_date: Optional[str] = Field(None, description="Optional override for current date (ISO)")
+    human_block: Optional[bool] = Field(False, description="Flag indicating human blocked logic")
+    human_override: Optional[bool] = Field(False, description="Flag indicating human override")
+    override_reason: Optional[str] = Field(None, description="Reason for human override")
 
 
 class JudgePacketRequest(BaseModel):
     tenant_id: Optional[str] = Field(None, description="Optional tenant identifier")
-    artifacts: List[dict] = Field(..., description="List of artifact payloads to package")
+    artifacts: list[dict] = Field(..., description="List of artifact payloads to package")
 
 
 @app.get("/api/health")
 async def health():
-    return {
-        "status": "ok",
-        "engine": "RentGuard",
-        "version": "1.1.0"
-    }
+    return {"status": "ok", "engine": "RentGuard", "version": "2.0.0"}
 
 
-@app.post("/api/evaluate/json")
-async def evaluate_json(record: EvaluationRecord, persist: bool = Query(False)):
+@app.post("/api/evaluate")
+async def evaluate_ledger(record: Ledger, persist: bool = Query(False)):
     payload = evaluate(record.dict(), persist=persist)
     if not payload:
         raise HTTPException(status_code=400, detail="Evaluation did not produce an artifact")
     return JSONResponse(content=payload)
-
-
-@app.post("/api/evaluate/csv")
-async def evaluate_csv(file: UploadFile = File(...)):
-    if not file.filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Only CSV uploads are supported")
-
-    raw = await file.read()
-    try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        raise HTTPException(status_code=400, detail="Unable to decode CSV as UTF-8")
-
-    reader = csv.DictReader(io.StringIO(text))
-    required_headers = {"tenant_id", "due_date", "late_count_window", "days_since_eligible_filing"}
-    if not reader.fieldnames or set(reader.fieldnames) != required_headers:
-        raise HTTPException(
-            status_code=400,
-            detail="CSV must include only headers: tenant_id, due_date, late_count_window, days_since_eligible_filing"
-        )
-
-    rows = list(reader)
-    if not rows:
-        raise HTTPException(status_code=400, detail="CSV contained no rows")
-
-    parsed_records = []
-    late_flags = []
-
-    for row in rows:
-        try:
-            record = {
-                "tenant_id": row["tenant_id"],
-                "due_date": row["due_date"],
-                "late_count_window": int(row["late_count_window"]),
-                "days_since_eligible_filing": int(row["days_since_eligible_filing"]),
-            }
-        except (KeyError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid CSV row: {exc}")
-
-        parsed_records.append(record)
-        late_flags.append(record["late_count_window"] > 0)
-
-    total = len(rows)
-    portfolio_late_rate = sum(1 for flag in late_flags if flag) / total if total else 0
-
-    results = []
-    for record in parsed_records:
-        record_with_rate = {**record, "portfolio_late_rate": portfolio_late_rate}
-        payload = evaluate(record_with_rate)
-        if not payload:
-            raise HTTPException(status_code=400, detail=f"Evaluation failed for tenant {record_with_rate['tenant_id']}")
-        results.append(payload)
-
-    return {"count": len(results), "portfolio_late_rate": portfolio_late_rate, "results": results}
 
 
 @app.post("/api/judge-packet")
