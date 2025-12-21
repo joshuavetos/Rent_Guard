@@ -51,10 +51,10 @@ def validate_payload(payload: dict) -> Tuple[str, date, List[Dict[str, bytes]]]:
         raise ValueError("Project must be a non-empty string.")
 
     sign_date_value = payload.get("signDate")
-    if sign_date_value:
+    if sign_date_value is not None:
         try:
-            sign_date = date.fromisoformat(sign_date_value)
-        except ValueError as exc:
+            sign_date = date.fromisoformat(str(sign_date_value))
+        except (TypeError, ValueError) as exc:
             raise ValueError("signDate must be in YYYY-MM-DD format.") from exc
     else:
         sign_date = date.today()
