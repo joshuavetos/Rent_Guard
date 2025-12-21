@@ -70,6 +70,7 @@ The `/backend` signature capture service accepts a JSON payload and generates a 
 - **Engine guarantees**
   - returns canonicalized data: trimmed project, a `date` instance, and a worker list sorted case-insensitively by name to keep PDFs deterministic
   - rejects signatures over `MAX_SIGNATURE_BYTES` and empty signature content
+  - Given identical validated payloads, RentGuard guarantees byte-identical PDF output across runs.
 
 ## Web & API
 

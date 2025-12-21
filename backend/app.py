@@ -1,4 +1,7 @@
+import base64
+import hashlib
 import io
+import json
 import logging
 import threading
 from datetime import date, datetime
@@ -11,7 +14,13 @@ from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 
-from backend.validation import safe_filename_component, validate_payload
+from backend.validation import (
+    PayloadShapeError,
+    SignatureError,
+    ValidationError,
+    safe_filename_component,
+    validate_payload,
+)
 
 OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -23,11 +32,18 @@ _today_signins: Dict[str, set[str]] = {}
 _signin_lock = threading.Lock()
 
 
-def _coerce_sign_date(value: object) -> date:
-    try:
-        return date.fromisoformat(str(value))
-    except Exception:
-        return date.today()
+def _canonical_payload(project: str, sign_date: date, workers: List[Dict[str, bytes]]) -> Dict[str, object]:
+    return {
+        "project": project,
+        "signDate": sign_date.isoformat(),
+        "workers": [
+            {
+                "name": worker["name"],
+                "signature": base64.b64encode(worker["signature_bytes"]).decode("ascii"),
+            }
+            for worker in workers
+        ],
+    }
 
 
 def _log_with_context(level: int, message: str, *, project: str, sign_date: date, step: str) -> None:
@@ -51,8 +67,11 @@ def _record_signins(sign_date: date, worker_names: List[str]) -> None:
             existing.add(name)
 
 
-def _build_pdf(project: str, sign_date: date, workers: List[Dict[str, bytes]]) -> Path:
-    filename = f"{safe_filename_component(project)}_{safe_filename_component(sign_date.isoformat())}.pdf"
+def _build_pdf(project: str, sign_date: date, workers: List[Dict[str, bytes]], *, artifact_id: str | None = None) -> Path:
+    filename_base = f"{safe_filename_component(project)}_{safe_filename_component(sign_date.isoformat())}"
+    if artifact_id:
+        filename_base = f"{filename_base}_{artifact_id}"
+    filename = f"{filename_base}.pdf"
     pdf_path = OUTPUT_DIR / filename
 
     buffer = io.BytesIO()
@@ -101,19 +120,33 @@ def sign():
     if payload is None:
         return jsonify({"error": "Invalid JSON payload.", "steps": steps}), 400
     context_project = payload.get("project", "unknown") if isinstance(payload, dict) else "unknown"
-    context_sign_date = _coerce_sign_date(payload.get("signDate")) if isinstance(payload, dict) else date.today()
+    context_sign_date = date.today()
 
     try:
         project, sign_date, workers = validate_payload(payload)
         steps.append("validated_payload")
-    except ValueError as exc:
+        canonical_payload = _canonical_payload(project, sign_date, workers)
+        artifact_id = hashlib.sha256(
+            json.dumps(canonical_payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+    except PayloadShapeError as exc:
         steps.append("validation_failed")
         _log_with_context(logging.ERROR, "payload_validation_failed", project=str(context_project), sign_date=context_sign_date, step="validate")
         logging.exception("payload_validation_failed")
-        return jsonify({"error": str(exc), "steps": steps}), 400
+        return jsonify({"error": str(exc), "type": "payload", "steps": steps}), 400
+    except SignatureError as exc:
+        steps.append("validation_failed")
+        _log_with_context(logging.ERROR, "payload_validation_failed", project=str(context_project), sign_date=context_sign_date, step="validate")
+        logging.exception("payload_validation_failed")
+        return jsonify({"error": str(exc), "type": "signature", "steps": steps}), 422
+    except ValidationError as exc:
+        steps.append("validation_failed")
+        _log_with_context(logging.ERROR, "payload_validation_failed", project=str(context_project), sign_date=context_sign_date, step="validate")
+        logging.exception("payload_validation_failed")
+        return jsonify({"error": str(exc), "type": "semantic", "steps": steps}), 409
 
     try:
-        pdf_path = _build_pdf(project, sign_date, workers)
+        pdf_path = _build_pdf(project, sign_date, workers, artifact_id=artifact_id)
         steps.append("pdf_generated")
     except Exception as exc:  # pragma: no cover - runtime safety
         _log_with_context(logging.ERROR, "pdf_generation_failed", project=project, sign_date=sign_date, step="pdf")
@@ -128,7 +161,7 @@ def sign():
         logging.exception("signin_record_failed")
 
     _log_with_context(logging.INFO, "sign_request_completed", project=project, sign_date=sign_date, step="complete")
-    return jsonify({"message": "Signatures captured.", "pdf": pdf_path.name, "steps": steps})
+    return jsonify({"message": "Signatures captured.", "pdf": pdf_path.name, "artifact_id": artifact_id, "steps": steps})
 
 
 @app.route("/today-signins", methods=["GET"])
