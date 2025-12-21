@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { AlertTriangle, FileSignature, Send, UploadCloud } from "lucide-react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api";
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "").replace(/\/$/, "");
 const MAX_SIGNATURE_BYTES = 200_000;
 
 const stripDataUrl = (value: string) => value.replace(/^data:image\/[a-zA-Z]+;base64,/, "");
