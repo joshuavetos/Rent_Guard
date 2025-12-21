@@ -1,4 +1,6 @@
 import base64
+import hashlib
+import json
 from datetime import date
 from pathlib import Path
 import sys
@@ -9,7 +11,7 @@ if str(ROOT) not in sys.path:
 
 import pytest
 
-from backend.app import _build_pdf
+from backend.app import _build_pdf, _canonical_payload
 from backend.validation import (
     MAX_SIGNATURE_BYTES,
     PayloadShapeError,
@@ -102,6 +104,24 @@ def test_build_pdf_smoke(monkeypatch, tmp_path):
         {"name": "Bob", "signature_bytes": signature_bytes},
     ]
     monkeypatch.setattr("backend.app.OUTPUT_DIR", tmp_path)
-    pdf_path = _build_pdf("Demo Project", date(2024, 1, 1), workers)
+    pdf_path = _build_pdf("Demo Project", date(2024, 1, 1), workers, artifact_id="abc123")
     assert pdf_path.exists()
     assert pdf_path.stat().st_size > 0
+    assert "abc123" in pdf_path.name
+
+
+def test_canonical_payload_hash_is_stable():
+    sig = base64.b64encode(b"sig").decode()
+    payload = _payload_with_workers(sig, sign_date="2024-01-15")
+    project, sign_date, workers = validate_payload(payload)
+    canonical_payload = _canonical_payload(project, sign_date, workers)
+    artifact_id = hashlib.sha256(
+        json.dumps(canonical_payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    project2, sign_date2, workers2 = validate_payload(payload)
+    canonical_payload_2 = _canonical_payload(project2, sign_date2, workers2)
+    artifact_id_2 = hashlib.sha256(
+        json.dumps(canonical_payload_2, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    assert canonical_payload == canonical_payload_2
+    assert artifact_id == artifact_id_2
