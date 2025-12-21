@@ -54,6 +54,23 @@ without runtime errors or external dependencies.
 
 See `validation/codex_execution_report.md` for execution details.
 
+## Signature Capture Engine (Contract)
+
+The `/backend` signature capture service accepts a JSON payload and generates a PDF containing worker signatures. The contract is intentionally explicit for callers:
+
+- **Payload schema**
+  - `project` (string, required, non-empty)
+  - `workers` (array, required, at least one)
+    - each worker: `name` (string, required, case-insensitive unique) and `signature` (base64 string; `data:` URLs allowed)
+  - `signDate` (string, optional ISO-8601 `YYYY-MM-DD`; defaults to today)
+- **Rejection rules**
+  - structural issues (missing/empty fields, wrong types, bad `signDate`) raise `PayloadShapeError`
+  - signature decoding/size issues raise `SignatureError`
+  - semantic conflicts such as duplicate worker names raise `ValidationError`
+- **Engine guarantees**
+  - returns canonicalized data: trimmed project, a `date` instance, and a worker list sorted case-insensitively by name to keep PDFs deterministic
+  - rejects signatures over `MAX_SIGNATURE_BYTES` and empty signature content
+
 ## Web & API
 
 The repository includes a FastAPI service and a Next.js 14 web dashboard.
